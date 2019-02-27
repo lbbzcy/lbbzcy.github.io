@@ -119,15 +119,13 @@
 <li>Tair: 支持丰富的数据结构，读写性能较高，部分类型比较慢，理论上容量可以无限扩充。</li>
 </ul>
 <p>总结:如果服务对延迟比较敏感，Map/Set数据也比较多的话，比较适合Redis。如果服务需要放入缓存量的数据很大，对延迟又不是特别敏感的话，那就可以选择Tair。在美团的很多应用中对Tair都有应用，在笔者的项目中使用其存放我们生成的支付token,支付码，用来替代数据库存储。大部分的情况下两者都可以选择，互为替代。</p>
-<h1 id="3-多级缓存"><a href="#3-多级缓存" class="headerlink" title="3.多级缓存"></a>3.多级缓存</h1><p>很多人一想到缓存马上脑子里面就会出现下面的图:</p>
-<p><img src="C:\Users\Administrator\AppData\Roaming\Typora\typora-user-images\1550200994217.png" alt="1550200994217"></p>
-<p>Redis用来存储热点数据，Redis中没有的数据则直接去数据库访问。</p>
+<h1 id="3-多级缓存"><a href="#3-多级缓存" class="headerlink" title="3.多级缓存"></a>3.多级缓存</h1><p>很多人一想到缓存马上脑子里面就会出现下面的图:<br><img src="/2019/02/15/如何优雅的设计和使用缓存/1550200994217.png" alt=""><br>Redis用来存储热点数据，Redis中没有的数据则直接去数据库访问。</p>
 <p>在之前介绍本地缓存的时候，很多人都问我，我已经有Redis了，我干嘛还需要了解Guava，Caffeine这些进程缓存呢。我基本统一回复下面两个答案:</p>
 <ol>
 <li>Redis如果挂了或者使用老版本的Redis,其会进行全量同步，此时Redis是不可用的，这个时候我们只能访问数据库，很容易造成雪崩。</li>
 <li>访问Redis会有一定的网络I/O以及序列化反序列化，虽然性能很高但是其终究没有本地方法快，可以将最热的数据存放在本地，以便进一步加快访问速度。这个思路并不是我们做互联网架构独有的，在计算机系统中使用L1,L2,L3多级缓存，用来减少对内存的直接访问，从而加快访问速度。</li>
 </ol>
-<p><img src="C:\Users\Administrator\AppData\Roaming\Typora\typora-user-images\1550201017361.png" alt="1550201017361"></p>
+<p><img src="/2019/02/15/如何优雅的设计和使用缓存/1550201017361.png" alt=""></p>
 <p>所以如果仅仅是使用Redis，能满足我们大部分需求，但是当需要追求更高的性能以及更高的可用性的时候，那就不得不了解多级缓存。</p>
 <h2 id="3-1使用进程缓存"><a href="#3-1使用进程缓存" class="headerlink" title="3.1使用进程缓存"></a>3.1使用进程缓存</h2><p>对于进程内缓存，其本来受限于内存的大小的限制，以及进程缓存更新后其他缓存无法得知，所以一般来说进程缓存适用于:</p>
 <ol>
@@ -138,7 +136,7 @@
 <p>俗话说得好，世界上没有什么是一个缓存解决不了的事，如果有，那就两个。</p>
 </blockquote>
 <p>一般来说我们选择一个进程缓存和一个分布式缓存来搭配做多级缓存，一般来说引入两个也足够了，如果使用三个，四个的话，技术维护成本会很高，反而有可能会得不偿失，如下图所示: </p>
-<p><img src="C:\Users\Administrator\AppData\Roaming\Typora\typora-user-images\1550201060498.png" alt="1550201060498"></p>
+<p><img src="/2019/02/15/如何优雅的设计和使用缓存/1550201060498.png" alt=""></p>
 <p>利用Caffeine做一级缓存，Redis作为二级缓存。</p>
 <ol>
 <li>首先去Caffeine中查询数据，如果有直接返回。如果没有则进行第2步。</li>
@@ -152,7 +150,7 @@
 </ul>
 <p>对于Redis的缓存更新，其他机器立马可见，但是也必须要设置超时时间，其时间比Caffeine的过期长。</p>
 <p>为了解决进程内缓存的问题，设计进一步优化:</p>
-<p><img src="C:\Users\Administrator\AppData\Roaming\Typora\typora-user-images\1550201074569.png" alt="1550201074569"></p>
+<p><img src="/2019/02/15/如何优雅的设计和使用缓存/1550201074569.png" alt=""></p>
 <p> 通过Redis的pub/sub，可以通知其他进程缓存对此缓存进行删除。如果Redis挂了或者订阅机制不靠谱，依靠超时设定，依然可以做兜底处理。</p>
 <h1 id="4-缓存更新"><a href="#4-缓存更新" class="headerlink" title="4.缓存更新"></a>4.缓存更新</h1><p>一般来说缓存的更新有两种情况:</p>
 <ul>
@@ -160,7 +158,7 @@
 <li>先更新数据库，再删除缓存。 这两种情况在业界，大家对其都有自己的看法。具体怎么使用还得看各自的取舍。当然肯定会有人问为什么要删除缓存呢？而不是更新缓存呢？你可以想想当有多个并发的请求更新数据，你并不能保证更新数据库的顺序和更新缓存的顺序一致，那就会出现数据库中和缓存中数据不一致的情况。所以一般来说考虑删除缓存。</li>
 </ul>
 <h2 id="4-1先删除缓存，再更新数据库"><a href="#4-1先删除缓存，再更新数据库" class="headerlink" title="4.1先删除缓存，再更新数据库"></a>4.1先删除缓存，再更新数据库</h2><p>对于一个更新操作简单来说，就是先去各级缓存进行删除，然后更新数据库。这个操作有一个比较大的问题，在对缓存删除完之后，有一个读请求，这个时候由于缓存被删除所以直接会读库，读操作的数据是老的并且会被加载进入缓存当中，后续读请求全部访问的老数据。</p>
-<p><img src="C:\Users\Administrator\AppData\Roaming\Typora\typora-user-images\1550201097208.png" alt="1550201097208"></p>
+<p><img src="/2019/02/15/如何优雅的设计和使用缓存/1550201097208.png" alt=""></p>
 <p>对缓存的操作不论成功失败都不能阻塞我们对数据库的操作，那么很多时候删除缓存可以用异步的操作，但是先删除缓存不能很好的适用于这个场景。</p>
 <p>先删除缓存也有一个好处是，如果对数据库操作失败了，那么由于先删除的缓存，最多只是造成Cache Miss。</p>
 <h2 id="4-2先更新数据库，再删除缓存-推荐"><a href="#4-2先更新数据库，再删除缓存-推荐" class="headerlink" title="4.2先更新数据库，再删除缓存(推荐)"></a>4.2先更新数据库，再删除缓存(推荐)</h2><p>如果我们使用更新数据库，再删除缓存就能避免上面的问题。但是同样的引入了新的问题,试想一下有一个数据此时是没有缓存的，所以查询请求会直接落库，更新操作在查询请求之后，但是更新操作删除数据库操作在查询完之后回填缓存之前，就会导致我们缓存中和数据库出现缓存不一致。</p>
@@ -179,11 +177,11 @@
 <li>约定:对于返回为NULL的依然缓存，对于抛出异常的返回不进行缓存,注意不要把抛异常的也给缓存了。采用这种手段的会增加我们缓存的维护成本，需要在插入缓存的时候删除这个空缓存，当然我们可以通过设置较短的超时时间来解决这个问题。</li>
 <li></li>
 </ol>
-<p><img src="C:\Users\Administrator\AppData\Roaming\Typora\typora-user-images\1550201125950.png" alt="1550201125950"></p>
+<p><img src="/2019/02/15/如何优雅的设计和使用缓存/1550201125950.png" alt=""></p>
 <ol start="2">
 <li>制定一些规则过滤一些不可能存在的数据，小数据用BitMap，大数据可以用布隆过滤器，比如你的订单ID 明显是在一个范围1-1000，如果不是1-1000之内的数据那其实可以直接给过滤掉。</li>
 </ol>
-<p><img src="C:\Users\Administrator\AppData\Roaming\Typora\typora-user-images\1550201151740.png" alt="1550201151740"></p>
+<p><img src="/2019/02/15/如何优雅的设计和使用缓存/1550201151740.png" alt=""></p>
 <h2 id="5-2缓存击穿"><a href="#5-2缓存击穿" class="headerlink" title="5.2缓存击穿"></a>5.2缓存击穿</h2><p>对于某些key设置了过期时间，但是其是热点数据，如果某个key失效，可能大量的请求打过来，缓存未命中，然后去数据库访问，此时数据库访问量会急剧增加。</p>
 <p>为了避免这个问题，我们可以采取下面的两个手段:</p>
 <ol>
@@ -198,7 +196,7 @@
 <li>缓存的过期时间可以取个随机值，比如以前是设置10分钟的超时时间，那每个Key都可以随机8-13分钟过期，尽量让不同Key的过期时间不同。</li>
 </ol>
 <h1 id="6-缓存污染"><a href="#6-缓存污染" class="headerlink" title="6.缓存污染"></a>6.缓存污染</h1><p>缓存污染一般出现在我们使用本地缓存中，可以想象，在本地缓存中如果你获得了缓存，但是你接下来修改了这个数据，但是这个数据并没有更新在数据库，这样就造成了缓存污染:</p>
-<p><img src="C:\Users\Administrator\AppData\Roaming\Typora\typora-user-images\1550201180147.png" alt="1550201180147"></p>
+<p><img src="/2019/02/15/如何优雅的设计和使用缓存/1550201180147.png" alt=""></p>
 <p> 上面的代码就造成了缓存污染，通过id获取Customer，但是需求需要修改Customer的名字，所以开发人员直接在取出来的对象中直接修改，这个Customer对象就会被污染，其他线程取出这个数据就是错误的数据。</p>
 <p>要想避免这个问题需要开发人员从编码上注意，并且代码必须经过严格的review，以及全方位的回归测试，才能从一定程度上解决这个问题。</p>
 <h1 id="7-序列化"><a href="#7-序列化" class="headerlink" title="7.序列化"></a>7.序列化</h1><p>序列化是很多人都不注意的一个问题，很多人忽略了序列化的问题，上线之后马上报出一下奇怪的错误异常，造成了不必要的损失，最后一排查都是序列化的问题。列举几个序列化常见的问题:</p>
@@ -221,7 +219,7 @@
 <li>可以使用G1垃圾收集器，通过-XX:MaxGCPauseMillis设置最大停顿时间，提高服务可用性。</li>
 </ol>
 <h1 id="9-缓存的监控"><a href="#9-缓存的监控" class="headerlink" title="9. 缓存的监控"></a>9. 缓存的监控</h1><p>很多人对于缓存的监控也比较忽略，基本上线之后如果不报错然后就默认他就生效了。但是存在这个问题，很多人由于经验不足，有可能设置了不恰当的过期时间，或者不恰当的缓存大小导致缓存命中率不高，让缓存就成为了代码中的一个装饰品。所以对于缓存各种指标的监控，也比较重要，通过其不同的指标数据，我们可以对缓存的参数进行优化，从而让缓存达到最优化:</p>
-<p><img src="C:\Users\Administrator\AppData\Roaming\Typora\typora-user-images\1550201212401.png" alt="1550201212401"></p>
+<p><img src="/2019/02/15/如何优雅的设计和使用缓存/1550201212401.png" alt=""></p>
 <p>上面的代码中用来记录get操作的，通过Cat记录了获取缓存成功，缓存不存在，缓存过期，缓存失败(获取缓存时如果抛出异常，则叫失败)，通过这些指标，我们就能统计出命中率，我们调整过期时间和大小的时候就可以参考这些指标进行优化。</p>
 <p>转载自 <a href="https://juejin.im/post/5b849878e51d4538c77a974a" target="_blank" rel="noopener">https://juejin.im/post/5b849878e51d4538c77a974a</a></p>
-</div><div class="tags"></div><div class="post-nav"><a class="next" href="/2019/01/28/shadowsocks实现翻墙/">shadowsocks实现翻墙</a></div></div></div></div><div class="pure-u-1-4 hidden_mid_and_down"><div id="sidebar"><div class="widget"><form class="search-form" action="//www.google.com/search" method="get" accept-charset="utf-8" target="_blank"><input type="text" name="q" maxlength="20" placeholder="Search"><input type="hidden" name="sitesearch" value="https://lbbzcy.github.io"></form></div><div class="widget"><div class="widget-title"><i class="fa fa-folder-o"> 分类</i></div><ul class="category-list"><li class="category-list-item"><a class="category-list-link" href="/categories/Linux/">Linux</a></li></ul></div><div class="widget"><div class="widget-title"><i class="fa fa-star-o"> 标签</i></div><div class="tagcloud"><a href="/tags/笔记/" style="font-size: 15px;">笔记</a> <a href="/tags/Linux/" style="font-size: 15px;">Linux</a></div></div><div class="widget"><div class="widget-title"><i class="fa fa-file-o"> 最近文章</i></div><ul class="post-list"><li class="post-list-item"><a class="post-list-link" href="/2019/02/15/如何优雅的设计和使用缓存/">如何优雅的设计和使用缓存</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/01/28/shadowsocks实现翻墙/">shadowsocks实现翻墙</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/01/28/Typora-Markdown-笔记/">Typora Markdown 笔记</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/01/24/Linux查看系统配置参数命令/">Linux查看系统配置参数命令</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/01/24/gitlab搭建/">gitlab搭建</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/09/03/centos7安装Docker/">centos7安装Docker</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/08/29/oninstack安装/">oninstack安装</a></li></ul></div><div class="widget"><div class="widget-title"><i class="fa fa-external-link"> 友情链接</i></div><ul></ul><a href="https://github.com/" title="GitHub" target="_blank">GitHub</a><ul></ul><a href="https://www.csdn.net/" title="CSDN" target="_blank">CSDN</a></div></div></div><div class="pure-u-1 pure-u-md-3-4"><div id="footer">Copyright © 2019 <a href="/." rel="nofollow">天道酬勤.</a> Powered by<a rel="nofollow" target="_blank" href="https://hexo.io"> Hexo.</a><a rel="nofollow" target="_blank" href="https://github.com/tufu9441/maupassant-hexo"> Theme</a> by<a rel="nofollow" target="_blank" href="https://github.com/pagecho"> Cho.</a></div></div></div><a class="show" id="rocket" href="#top"></a><script type="text/javascript" src="/js/totop.js?v=0.0.0" async></script><script type="text/javascript" src="//lib.baomitu.com/fancybox/3.5.2/jquery.fancybox.min.js" async></script><script type="text/javascript" src="/js/fancybox.js?v=0.0.0" async></script><link rel="stylesheet" type="text/css" href="//lib.baomitu.com/fancybox/3.5.2/jquery.fancybox.min.css"><script type="text/javascript" color="0, 0, 255" opacity="1" zindex="-2" count="150" src="//lib.baomitu.com/canvas-nest.js/2.0.3/canvas-nest.js"></script><script type="text/javascript" src="/js/codeblock-resizer.js?v=0.0.0"></script><script type="text/javascript" src="/js/smartresize.js?v=0.0.0"></script></div></body></html>
+</div><div class="tags"></div><div class="post-nav"><a class="pre" href="/2019/02/27/IntelliJ-IDEA-控制台中文乱码解决方案/">IntelliJ IDEA 控制台中文乱码解决方案</a><a class="next" href="/2019/01/28/shadowsocks实现翻墙/">shadowsocks实现翻墙</a></div></div></div></div><div class="pure-u-1-4 hidden_mid_and_down"><div id="sidebar"><div class="widget"><form class="search-form" action="//www.google.com/search" method="get" accept-charset="utf-8" target="_blank"><input type="text" name="q" maxlength="20" placeholder="Search"><input type="hidden" name="sitesearch" value="https://lbbzcy.github.io"></form></div><div class="widget"><div class="widget-title"><i class="fa fa-folder-o"> 分类</i></div><ul class="category-list"><li class="category-list-item"><a class="category-list-link" href="/categories/Linux/">Linux</a></li></ul></div><div class="widget"><div class="widget-title"><i class="fa fa-star-o"> 标签</i></div><div class="tagcloud"><a href="/tags/工具使用/" style="font-size: 15px;">工具使用</a> <a href="/tags/Linux/" style="font-size: 15px;">Linux</a> <a href="/tags/笔记/" style="font-size: 15px;">笔记</a></div></div><div class="widget"><div class="widget-title"><i class="fa fa-file-o"> 最近文章</i></div><ul class="post-list"><li class="post-list-item"><a class="post-list-link" href="/2019/02/27/IntelliJ-IDEA-控制台中文乱码解决方案/">IntelliJ IDEA 控制台中文乱码解决方案</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/02/15/如何优雅的设计和使用缓存/">如何优雅的设计和使用缓存</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/01/28/shadowsocks实现翻墙/">shadowsocks实现翻墙</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/01/28/Typora-Markdown-笔记/">Typora Markdown 笔记</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/01/24/Linux查看系统配置参数命令/">Linux查看系统配置参数命令</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/01/24/gitlab搭建/">gitlab搭建</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/09/03/centos7安装Docker/">centos7安装Docker</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/08/29/oninstack安装/">oninstack安装</a></li></ul></div><div class="widget"><div class="widget-title"><i class="fa fa-external-link"> 友情链接</i></div><ul></ul><a href="https://github.com/" title="GitHub" target="_blank">GitHub</a><ul></ul><a href="https://www.csdn.net/" title="CSDN" target="_blank">CSDN</a></div></div></div><div class="pure-u-1 pure-u-md-3-4"><div id="footer">Copyright © 2019 <a href="/." rel="nofollow">天道酬勤.</a> Powered by<a rel="nofollow" target="_blank" href="https://hexo.io"> Hexo.</a><a rel="nofollow" target="_blank" href="https://github.com/tufu9441/maupassant-hexo"> Theme</a> by<a rel="nofollow" target="_blank" href="https://github.com/pagecho"> Cho.</a></div></div></div><a class="show" id="rocket" href="#top"></a><script type="text/javascript" src="/js/totop.js?v=0.0.0" async></script><script type="text/javascript" src="//lib.baomitu.com/fancybox/3.5.2/jquery.fancybox.min.js" async></script><script type="text/javascript" src="/js/fancybox.js?v=0.0.0" async></script><link rel="stylesheet" type="text/css" href="//lib.baomitu.com/fancybox/3.5.2/jquery.fancybox.min.css"><script type="text/javascript" color="0, 0, 255" opacity="1" zindex="-2" count="150" src="//lib.baomitu.com/canvas-nest.js/2.0.3/canvas-nest.js"></script><script type="text/javascript" src="/js/codeblock-resizer.js?v=0.0.0"></script><script type="text/javascript" src="/js/smartresize.js?v=0.0.0"></script></div></body></html>
